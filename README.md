@@ -1,37 +1,37 @@
-# Gasoline 95 Price Regression and Model Selection
+# Gasoline 95 Price Regression and Model Review
 
 Applied econometrics project on monthly Gasoline 95 retail prices in Lleida, Spain, from 2016 to 2025.
 
-The repository contains the original regression report, the data pipeline, and a model-selection extension that checks whether common machine-learning challengers improve enough to replace the final linear regression.
+The repository contains the original regression report, a reproducible data pipeline, and a challenger-model review of the final linear regression.
 
-The portfolio value of the project is not only the final regression. The stronger part is the full modelling workflow: building a clean dataset from public sources, identifying a problematic feature, estimating an interpretable model, testing challenger models, and choosing the final method based on both predictive performance and auditability.
+The analysis first develops an interpretable linear regression using standard econometric diagnostics, including checks around multicollinearity, heteroskedasticity and variable relevance. A second step compares the selected regression against common statistical and machine-learning challengers using the same final feature set.
 
 ## Main Files
 
 - `reports/regression_model_analysis.pdf`: English version of the original econometric regression report, preserving the original layout.
-- `reports/model_comparison_and_selection.pdf`: short model-selection memo comparing the final regression against challenger models.
-- `model_decision_note.md`: concise note explaining the selected model, challenger results, validation setup and limitations.
+- `reports/model_comparison_and_selection.pdf`: model review note comparing the final regression against challenger models.
+- `model_decision_note.md`: concise decision note covering the selected model, challenger results, validation setup and limitations.
 - `notebooks/model_comparison.ipynb`: notebook comparing OLS with Ridge, Lasso, Elastic Net, Decision Tree, Random Forest, Gradient Boosting, XGBoost and SVR.
 - `src/build_dataset.py`: pandas pipeline that rebuilds the final monthly dataset from clean source extracts.
 - `src/create_model_comparison_and_selection.py`: regenerates the model-comparison extension, figures, comparison tables and notebook.
 
-## Main Conclusion
+## Main Finding
 
-Lasso and Ridge obtain slightly lower holdout error than the final OLS regression, but the improvement is very small. Since the goal is explanation and model assessment rather than pure forecasting, the final OLS regression is the preferred model: it is easier to interpret, easier to audit, and almost as accurate as the best regularized alternatives.
+Lasso and Ridge obtain slightly lower holdout error than the final OLS regression, but the improvement is very small. The final OLS regression is retained as the analytical baseline because it is easier to interpret, easier to review, and almost as accurate as the best regularized alternatives.
 
 XGBoost and other non-linear models are included as challengers, but they do not improve performance on this small monthly dataset when restricted to the same final features.
 
-## Why OLS Is Selected
+## Why OLS Is Retained
 
 The final model is selected because it offers the best balance between:
 
 - predictive performance;
 - interpretability;
 - robustness for a small monthly dataset;
-- ease of audit and explanation;
+- ease of review and explanation;
 - economic coherence of the coefficients.
 
-The project deliberately does not select the most complex model. The final choice is based on the modelling objective, the small holdout sample, the marginal gain from challengers, and the need to explain the result clearly.
+The project deliberately does not select the most complex model. The final choice is based on the modelling objective, the small holdout sample, the marginal gain from challengers, and the need for a transparent specification.
 
 ## Scope and Limitations
 

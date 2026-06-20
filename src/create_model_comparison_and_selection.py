@@ -200,18 +200,18 @@ def compare_models(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
             )
         )
     comparison = pd.DataFrame(rows).sort_values(["MAE", "RMSE"]).reset_index(drop=True)
-    selection_roles = {
-        "OLS": "Selected primary model",
-        "Lasso": "Close linear challenger",
-        "Ridge": "Close linear challenger",
-        "Elastic Net": "Close linear challenger",
-        "Gradient Boosting": "Rejected: higher error",
-        "SVR": "Rejected: higher error",
-        "Random Forest": "Rejected: higher error",
-        "XGBoost": "Rejected: higher error",
-        "Decision Tree": "Rejected: higher error",
+    assessments = {
+        "OLS": "Recommended baseline",
+        "Lasso": "Marginal gain",
+        "Ridge": "Marginal gain",
+        "Elastic Net": "Marginal gain",
+        "Gradient Boosting": "Not selected",
+        "SVR": "Not selected",
+        "Random Forest": "Not selected",
+        "XGBoost": "Not selected",
+        "Decision Tree": "Not selected",
     }
-    comparison["selection_role"] = comparison["model"].map(selection_roles)
+    comparison["assessment"] = comparison["model"].map(assessments)
     predictions = pd.concat(frames, ignore_index=True)
     return comparison, predictions
 
@@ -298,28 +298,28 @@ def write_markdown_report(df: pd.DataFrame, fit, coefs: pd.DataFrame, comparison
             ci_high=coefs["ci_high"].round(4),
         )
     )
-    comp_cols = ["model", "method_type", "MAE", "RMSE", "R2_holdout", "Bias", "selection_role"]
+    comp_cols = ["model", "method_type", "MAE", "RMSE", "R2_holdout", "Bias", "assessment"]
     comp_md = format_table_markdown(comparison[comp_cols])
 
     text = dedent(
         f"""
-        # Model Selection Memo
+        # Gasoline 95 Price Model Review
 
-        ## Challenger review for the Gasoline 95 regression
+        ## Regression diagnostics and challenger assessment
 
-        ### Decision
+        ### Recommendation
 
-        Retain the final OLS regression with HC3 robust standard errors as the primary model.
+        Use the final OLS regression with HC3 robust standard errors as the analytical baseline. Do not treat it as a production forecasting model without additional validation.
 
-        Lasso gives the lowest holdout MAE at **{best['MAE']:.4f} EUR/litre**. OLS gives **{ols['MAE']:.4f} EUR/litre**, only **{mae_gap:.4f} EUR/litre** higher. That gap is not material enough to replace the regression in a project where the model has to be explained, challenged and documented, not only ranked by a single predictive metric.
+        The challenger standard used in this review is simple: a replacement model should show a clear improvement in holdout error or provide a stability benefit that compensates for lower transparency. No challenger meets that standard. Lasso gives the lowest holdout MAE at **{best['MAE']:.4f} EUR/litre**. OLS gives **{ols['MAE']:.4f} EUR/litre**, only **{mae_gap:.4f} EUR/litre** higher.
 
-        The selected model also gives a clear economic reading. Before the COVID/post-COVID period, a one-dollar increase in lagged Brent is associated with an increase of about **{brent_base:.4f} EUR/litre** in the retail price. With the interaction term, the implied Brent slope during the COVID/post-COVID regime rises to about **{slope_after_covid:.4f} EUR/litre**. This is the main reason to keep the interaction explicit instead of hiding the relationship inside a more flexible estimator.
+        The OLS specification also keeps the main economic relationship visible. Before the COVID/post-COVID period, a one-dollar increase in lagged Brent is associated with an increase of about **{brent_base:.4f} EUR/litre** in the retail price. With the interaction term, the implied Brent slope during the COVID/post-COVID regime rises to about **{slope_after_covid:.4f} EUR/litre**.
 
-        ### Modelling Question
+        ### Scope
 
-        The objective is to explain monthly Gasoline 95 prices in Lleida using a small set of economically meaningful variables, and then check whether common machine-learning challengers improve the out-of-sample result enough to justify a different model choice.
+        This note reviews the final regression from the econometric analysis and tests whether common challenger models justify replacing it. The original regression work focused on selecting a linear specification after checking issues such as multicollinearity, heteroskedasticity and variable relevance. The challenger review is a second step, not a replacement for those diagnostics.
 
-        The dataset contains monthly observations from **2016-01 to 2025-12**. After creating lagged variables, the effective modelling sample starts in **{df['month'].iloc[0]}** and contains **{len(df)} observations**.
+        The dataset contains monthly observations from **2016-01 to 2025-12**. After lag construction, the effective modelling sample starts in **{df['month'].iloc[0]}** and contains **{len(df)} observations**.
 
         The dependent variable is `pvp`, the retail price of Gasoline 95 in Lleida, measured in EUR/litre. The final model uses:
 
@@ -328,13 +328,13 @@ def write_markdown_report(df: pd.DataFrame, fit, coefs: pd.DataFrame, comparison
         - `covid_post`: dummy equal to 1 from March 2020 onward.
         - `brent_lag1_x_covid_post`: interaction between lagged Brent and the COVID/post-COVID dummy.
 
-        The tax variable was excluded from the final model. It improves in-sample fit, but it is too close to the retail price by construction and would make the model less useful as an independent explanation.
+        The tax variable is excluded from the final model. It improves in-sample fit, but it is too close to the retail price by construction and weakens the model as an independent explanation.
 
-        ### Validation Design
+        ### Review Design
 
-        The challenger review keeps the information set fixed. OLS, Ridge, Lasso, Elastic Net, Decision Tree, Random Forest, Gradient Boosting, XGBoost and SVR all use exactly the same four final features. This isolates the estimator choice from feature-set changes.
+        The challenger review keeps the information set fixed. OLS, Ridge, Lasso, Elastic Net, Decision Tree, Random Forest, Gradient Boosting, XGBoost and SVR all use the same four final features. The purpose is to test the estimator choice, not to mix model comparison with feature engineering.
 
-        The split is chronological rather than random: observations before **2023-01-01** are used for training and observations from **2023-01-01** onward are used as holdout data. The main metrics are MAE and RMSE in EUR/litre, with holdout R-squared and average prediction bias used as secondary checks.
+        The split is chronological: observations before **2023-01-01** are used for training and observations from **2023-01-01** onward are used as holdout data. The main metrics are MAE and RMSE in EUR/litre. Holdout R-squared and average prediction bias are secondary checks.
 
         ### Final Regression Specification
 
@@ -351,43 +351,40 @@ def write_markdown_report(df: pd.DataFrame, fit, coefs: pd.DataFrame, comparison
 
         {coef_md}
 
-        The regression has an in-sample R-squared of **{fit.rsquared:.4f}** and an adjusted R-squared of **{fit.rsquared_adj:.4f}**. The result should not be read as a causal estimate. It is an explanatory model built from a small monthly time series and intended to summarize the main price relationships in an interpretable way.
+        The regression has an in-sample R-squared of **{fit.rsquared:.4f}** and an adjusted R-squared of **{fit.rsquared_adj:.4f}**. This is an explanatory model, not a causal estimate.
 
         ![Actual price and final OLS fitted value](../figures/regression_actual_vs_fitted.png)
 
         ### Challenger Results
 
-        The strongest challengers are the regularized linear models. They are useful checks, but they do not change the modelling decision because their improvement over OLS is very small.
+        The regularized linear models are the closest challengers. They slightly reduce holdout error, but the difference is too small to change the model decision.
 
         {comp_md}
 
         ![Holdout MAE by model](../figures/model_comparison_mae_full.png)
 
-        Tree-based and kernel-based models do not improve the result on this feature set. XGBoost is included as a standard high-capacity benchmark, but it performs worse than the linear alternatives in this sample. That result is consistent with the dataset size and with the fact that the selected features already describe a mostly linear economic relationship.
+        Tree-based and kernel-based models do not improve the result on this feature set. XGBoost is included as a high-capacity benchmark, but it performs worse than the linear alternatives in this sample. This is consistent with the small monthly dataset and with a relationship that is already well represented by the selected linear terms.
 
         ![Holdout predictions for selected models](../figures/holdout_predictions_selected.png)
 
-        ### Selection Rationale
+        ### Model Risk Assessment
 
-        OLS is retained because it gives the best balance between evidence and usability:
+        The main model risks are:
 
-        - The out-of-sample error is almost identical to the best regularized challenger.
-        - The coefficients remain directly explainable in economic terms.
-        - The Brent interaction makes the regime change visible and auditable.
-        - The model is simpler to document and challenge than the non-linear alternatives.
-        - The more flexible models do not provide enough empirical benefit on this dataset.
+        - small validation sample: the holdout period has 36 monthly observations;
+        - regime sensitivity: the sample includes COVID and the 2022 energy-price shock;
+        - specification risk: alternative lags and transformations may change the result;
+        - limited use case: the model is suitable for explanation and comparison, not automated pricing or trading.
 
-        Ridge, Lasso and Elastic Net are credible challengers. For a pure forecasting task, one of them could be selected after further validation. For this project, the marginal error reduction is not enough to offset the loss of direct coefficient interpretation.
+        OLS remains the preferred baseline because it is close to the best challenger in holdout error, keeps coefficient interpretation direct, and exposes the Brent regime effect explicitly. Ridge, Lasso and Elastic Net should be retained as documented challengers, not selected as replacements on the current evidence.
 
         ### Limitations
 
-        The holdout set has only 36 monthly observations, so the exact ranking of close models should not be overinterpreted. The sample also contains unusual market shocks, especially COVID and the 2022 energy-price period. The model is explanatory, not causal, and it should not be treated as a production forecasting system.
-
-        A stronger validation exercise would add rolling-origin validation, alternative lag structures, logarithmic transformations and richer time-series specifications. Those extensions are outside the scope of this project but are the natural next tests before any operational use.
+        Before operational use, the model would need rolling-origin validation, alternative lag structures, logarithmic transformations, stability checks by period, and more explicit monitoring rules. Those steps are outside the scope of this public project.
 
         ### Conclusion
 
-        The final regression is selected because it is accurate enough, transparent, economically coherent and easier to challenge. The model comparison does not show a clear enough benefit from more complex methods to replace it.
+        The final OLS regression is retained as the analytical baseline. The challenger models do not provide enough incremental evidence to replace a simpler, auditable specification.
         """
     ).strip()
     text = "\n".join(line[8:] if line.startswith("        ") else line for line in text.splitlines())
@@ -405,7 +402,7 @@ def markdown_to_html(markdown: str) -> str:
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>Model Selection Memo</title>
+  <title>Gasoline 95 Price Model Review</title>
   <style>
     body {{ font-family: Arial, sans-serif; max-width: 920px; margin: 40px auto; line-height: 1.55; color: #222; }}
     h1, h2, h3 {{ color: #111; }}
@@ -475,8 +472,8 @@ def write_pdf_report(markdown_report: str, coefs: pd.DataFrame, comparison: pd.D
     )
 
     story = [
-        Paragraph("Model Selection Memo", styles["Title"]),
-        Paragraph("Challenger review for the Gasoline 95 regression", styles["Heading2"]),
+        Paragraph("Gasoline 95 Price Model Review", styles["Title"]),
+        Paragraph("Regression diagnostics and challenger assessment", styles["Heading2"]),
         Spacer(1, 8),
     ]
 
@@ -510,7 +507,7 @@ def write_pdf_report(markdown_report: str, coefs: pd.DataFrame, comparison: pd.D
                             "MAE",
                             "RMSE",
                             "R2_holdout",
-                            "selection_role",
+                            "assessment",
                         ]
                     ]
                 )
@@ -525,7 +522,8 @@ def write_pdf_report(markdown_report: str, coefs: pd.DataFrame, comparison: pd.D
                 if line.startswith("|") or line.startswith("![") or line.startswith("```"):
                     continue
                 if line.strip():
-                    cleaned.append(line.strip().lstrip("- "))
+                    stripped = line.strip()
+                    cleaned.append(stripped if stripped.startswith("- ") else stripped)
             text = "<br/><br/>".join(cleaned[:10])
             if text:
                 story.append(paragraph(text, styles["BodyJust"]))
@@ -544,9 +542,9 @@ def notebook_source(comparison: pd.DataFrame) -> nbf.NotebookNode:
 
     cells = [
         nbf.v4.new_markdown_cell(
-            "# Model Comparison Notebook\n\n"
-            "This notebook supports the model-selection memo. The comparison is intentionally narrow: "
-            "all challengers use the same final feature set, so the test is whether a different estimator improves the selected regression enough to justify changing the model."
+            "# Challenger Model Assessment\n\n"
+            "This notebook reproduces the challenger assessment for the final gasoline price regression. "
+            "All challengers use the same final feature set, so the comparison isolates the estimator choice."
         ),
         nbf.v4.new_code_cell(
             "from pathlib import Path\n"
@@ -591,8 +589,8 @@ def notebook_source(comparison: pd.DataFrame) -> nbf.NotebookNode:
         ),
         nbf.v4.new_markdown_cell(
             "## Challenger Models\n\n"
-            "The models below are compared on a chronological holdout split. The purpose is not aggressive tuning; "
-            "it is to check whether common alternatives clearly beat the final regression using the same information set."
+            "The models below are compared on a chronological holdout split. Random splitting is avoided because the data are monthly time series observations. "
+            "The objective is to test whether common alternatives materially improve the selected regression using the same information set."
         ),
         nbf.v4.new_code_cell(
             "train = df_model[df_model['date'] < SPLIT_DATE].copy()\n"
@@ -608,16 +606,16 @@ def notebook_source(comparison: pd.DataFrame) -> nbf.NotebookNode:
             "    ('XGBoost', 'boosted tree ensemble', XGBRegressor(n_estimators=150, learning_rate=0.03, max_depth=2, subsample=0.8, colsample_bytree=0.9, objective='reg:squarederror', random_state=42, n_jobs=1)),\n"
             "    ('SVR', 'kernel method', make_pipeline(StandardScaler(), SVR(C=10, epsilon=0.02))),\n"
             "]\n\n"
-            "selection_roles = {\n"
-            "    'OLS': 'Selected primary model',\n"
-            "    'Lasso': 'Close linear challenger',\n"
-            "    'Ridge': 'Close linear challenger',\n"
-            "    'Elastic Net': 'Close linear challenger',\n"
-            "    'Gradient Boosting': 'Rejected: higher error',\n"
-            "    'SVR': 'Rejected: higher error',\n"
-            "    'Random Forest': 'Rejected: higher error',\n"
-            "    'XGBoost': 'Rejected: higher error',\n"
-            "    'Decision Tree': 'Rejected: higher error',\n"
+            "assessments = {\n"
+            "    'OLS': 'Recommended baseline',\n"
+            "    'Lasso': 'Marginal gain',\n"
+            "    'Ridge': 'Marginal gain',\n"
+            "    'Elastic Net': 'Marginal gain',\n"
+            "    'Gradient Boosting': 'Not selected',\n"
+            "    'SVR': 'Not selected',\n"
+            "    'Random Forest': 'Not selected',\n"
+            "    'XGBoost': 'Not selected',\n"
+            "    'Decision Tree': 'Not selected',\n"
             "}\n\n"
             "rows = []\n"
             "predictions = []\n"
@@ -632,7 +630,7 @@ def notebook_source(comparison: pd.DataFrame) -> nbf.NotebookNode:
             "        'RMSE': math.sqrt(mean_squared_error(test['pvp'], pred)),\n"
             "        'R2_holdout': r2_score(test['pvp'], pred),\n"
             "        'Bias': float(np.mean(pred - test['pvp'])),\n"
-            "        'selection_role': selection_roles[name],\n"
+            "        'assessment': assessments[name],\n"
             "    })\n"
             "    predictions.append(pd.DataFrame({'date': test['date'], 'actual': test['pvp'].values, 'prediction': pred, 'model': name}))\n\n"
             "comparison = pd.DataFrame(rows).sort_values(['MAE','RMSE']).reset_index(drop=True)\n"
@@ -640,9 +638,8 @@ def notebook_source(comparison: pd.DataFrame) -> nbf.NotebookNode:
             "comparison"
         ),
         nbf.v4.new_markdown_cell(
-            "## Current Results\n\n"
-            "The table below is generated by `src/create_model_comparison_and_selection.py` from the current dataset. "
-            "It is included here so the notebook remains readable on GitHub even before re-running the cells.\n\n"
+            "## Generated Comparison Table\n\n"
+            "The table below is generated by `src/create_model_comparison_and_selection.py` from the current dataset.\n\n"
             + format_table_markdown(
                 comparison[
                     [
@@ -652,7 +649,7 @@ def notebook_source(comparison: pd.DataFrame) -> nbf.NotebookNode:
                         "RMSE",
                         "R2_holdout",
                         "Bias",
-                        "selection_role",
+                        "assessment",
                     ]
                 ]
             )
@@ -682,10 +679,10 @@ def notebook_source(comparison: pd.DataFrame) -> nbf.NotebookNode:
             "plt.show()"
         ),
         nbf.v4.new_markdown_cell(
-            "## Conclusion\n\n"
-            "Lasso and Ridge produce slightly lower holdout errors than OLS, but the improvement is very small. "
-            "The selected model is therefore the final OLS regression: it remains close to the best predictive alternatives while keeping the coefficients and the COVID-Brent interaction directly explainable. "
-            "The non-linear models, including XGBoost, do not justify their additional complexity on this small monthly dataset."
+            "## Assessment\n\n"
+            "The regularized linear models produce slightly lower holdout errors than OLS, but the gain is small. "
+            "The final OLS regression remains the recommended baseline because it is close to the best predictive alternatives and keeps the coefficients directly explainable. "
+            "The non-linear models, including XGBoost, do not justify their additional complexity on this sample."
         ),
     ]
     nb.cells = cells
@@ -724,7 +721,7 @@ def main() -> None:
     print(REPORTS_DIR / "model_comparison_and_selection.md")
     print(REPORTS_DIR / "model_comparison_and_selection.pdf")
     print(NOTEBOOKS_DIR / "model_comparison.ipynb")
-    print(comparison[["model", "MAE", "RMSE", "R2_holdout", "selection_role"]].to_string(index=False))
+    print(comparison[["model", "MAE", "RMSE", "R2_holdout", "assessment"]].to_string(index=False))
 
 
 if __name__ == "__main__":
