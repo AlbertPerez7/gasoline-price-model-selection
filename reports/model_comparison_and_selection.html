@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Model Selection Memo</title>
+  <style>
+    body { font-family: Arial, sans-serif; max-width: 920px; margin: 40px auto; line-height: 1.55; color: #222; }
+    h1, h2, h3 { color: #111; }
+    table { border-collapse: collapse; width: 100%; font-size: 14px; margin: 18px 0; }
+    th, td { border: 1px solid #ddd; padding: 7px 9px; text-align: left; }
+    th { background: #f3f4f6; }
+    code, pre { background: #f6f6f6; }
+    pre { padding: 12px; overflow-x: auto; }
+    img { max-width: 100%; margin: 12px 0 22px; }
+  </style>
+</head>
+<body>
+<pre># Model Selection Memo
+
+## Challenger review for the Gasoline 95 regression
+
+### Decision
+
+Retain the final OLS regression with HC3 robust standard errors as the primary model.
+
+Lasso gives the lowest holdout MAE at **0.0458 EUR/litre**. OLS gives **0.0464 EUR/litre**, only **0.0006 EUR/litre** higher. That gap is not material enough to replace the regression in a project where the model has to be explained, challenged and documented, not only ranked by a single predictive metric.
+
+The selected model also gives a clear economic reading. Before the COVID/post-COVID period, a one-dollar increase in lagged Brent is associated with an increase of about **0.0058 EUR/litre** in the retail price. With the interaction term, the implied Brent slope during the COVID/post-COVID regime rises to about **0.0090 EUR/litre**. This is the main reason to keep the interaction explicit instead of hiding the relationship inside a more flexible estimator.
+
+### Modelling Question
+
+The objective is to explain monthly Gasoline 95 prices in Lleida using a small set of economically meaningful variables, and then check whether common machine-learning challengers improve the out-of-sample result enough to justify a different model choice.
+
+The dataset contains monthly observations from **2016-01 to 2025-12**. After creating lagged variables, the effective modelling sample starts in **2016-02** and contains **119 observations**.
+
+The dependent variable is `pvp`, the retail price of Gasoline 95 in Lleida, measured in EUR/litre. The final model uses:
+
+- `brent_lag1`: Brent crude oil price lagged one month.
+- `fx`: USD/EUR exchange rate.
+- `covid_post`: dummy equal to 1 from March 2020 onward.
+- `brent_lag1_x_covid_post`: interaction between lagged Brent and the COVID/post-COVID dummy.
+
+The tax variable was excluded from the final model. It improves in-sample fit, but it is too close to the retail price by construction and would make the model less useful as an independent explanation.
+
+### Validation Design
+
+The challenger review keeps the information set fixed. OLS, Ridge, Lasso, Elastic Net, Decision Tree, Random Forest, Gradient Boosting, XGBoost and SVR all use exactly the same four final features. This isolates the estimator choice from feature-set changes.
+
+The split is chronological rather than random: observations before **2023-01-01** are used for training and observations from **2023-01-01** onward are used as holdout data. The main metrics are MAE and RMSE in EUR/litre, with holdout R-squared and average prediction bias used as secondary checks.
+
+### Final Regression Specification
+
+```text
+pvp_t = beta0
+      + beta1 * brent_lag1_t
+      + beta2 * fx_t
+      + beta3 * covid_post_t
+      + beta4 * brent_lag1_t * covid_post_t
+      + error_t
+```
+
+Standard errors are HC3 robust standard errors.
+
+| term                    | coef    | robust_se | p_value | ci_low  | ci_high |
+| ----------------------- | ------- | --------- | ------- | ------- | ------- |
+| const                   | 1.4666  | 0.1180    | 0.0000  | 1.2353  | 1.6980  |
+| brent_lag1              | 0.0058  | 0.0005    | 0.0000  | 0.0049  | 0.0068  |
+| fx                      | -0.5044 | 0.1110    | 0.0000  | -0.7221 | -0.2868 |
+| covid_post              | -0.0853 | 0.0605    | 0.1582  | -0.2038 | 0.0332  |
+| brent_lag1_x_covid_post | 0.0031  | 0.0009    | 0.0006  | 0.0013  | 0.0049  |
+
+The regression has an in-sample R-squared of **0.9403** and an adjusted R-squared of **0.9382**. The result should not be read as a causal estimate. It is an explanatory model built from a small monthly time series and intended to summarize the main price relationships in an interpretable way.
+
+![Actual price and final OLS fitted value](../figures/regression_actual_vs_fitted.png)
+
+### Challenger Results
+
+The strongest challengers are the regularized linear models. They are useful checks, but they do not change the modelling decision because their improvement over OLS is very small.
+
+| model             | method_type                     | MAE    | RMSE   | R2_holdout | Bias    | selection_role          |
+| ----------------- | ------------------------------- | ------ | ------ | ---------- | ------- | ----------------------- |
+| Lasso             | sparse regularized linear model | 0.0458 | 0.0558 | 0.4668     | -0.0194 | Close linear challenger |
+| Ridge             | regularized linear model        | 0.0461 | 0.0561 | 0.4616     | -0.0199 | Close linear challenger |
+| Elastic Net       | mixed regularized linear model  | 0.0462 | 0.0561 | 0.4601     | -0.0197 | Close linear challenger |
+| OLS               | linear benchmark                | 0.0464 | 0.0563 | 0.4578     | -0.0198 | Selected primary model  |
+| Gradient Boosting | boosted tree ensemble           | 0.0652 | 0.0851 | -0.2418    | -0.0425 | Rejected: higher error  |
+| SVR               | kernel method                   | 0.0751 | 0.0860 | -0.2672    | -0.0581 | Rejected: higher error  |
+| Random Forest     | bagged tree ensemble            | 0.0784 | 0.0928 | -0.4748    | -0.0611 | Rejected: higher error  |
+| XGBoost           | boosted tree ensemble           | 0.0853 | 0.1002 | -0.7193    | -0.0776 | Rejected: higher error  |
+| Decision Tree     | simple non-linear tree          | 0.1093 | 0.1239 | -1.6314    | -0.0959 | Rejected: higher error  |
+
+![Holdout MAE by model](../figures/model_comparison_mae_full.png)
+
+Tree-based and kernel-based models do not improve the result on this feature set. XGBoost is included as a standard high-capacity benchmark, but it performs worse than the linear alternatives in this sample. That result is consistent with the dataset size and with the fact that the selected features already describe a mostly linear economic relationship.
+
+![Holdout predictions for selected models](../figures/holdout_predictions_selected.png)
+
+### Selection Rationale
+
+OLS is retained because it gives the best balance between evidence and usability:
+
+- The out-of-sample error is almost identical to the best regularized challenger.
+- The coefficients remain directly explainable in economic terms.
+- The Brent interaction makes the regime change visible and auditable.
+- The model is simpler to document and challenge than the non-linear alternatives.
+- The more flexible models do not provide enough empirical benefit on this dataset.
+
+Ridge, Lasso and Elastic Net are credible challengers. For a pure forecasting task, one of them could be selected after further validation. For this project, the marginal error reduction is not enough to offset the loss of direct coefficient interpretation.
+
+### Limitations
+
+The holdout set has only 36 monthly observations, so the exact ranking of close models should not be overinterpreted. The sample also contains unusual market shocks, especially COVID and the 2022 energy-price period. The model is explanatory, not causal, and it should not be treated as a production forecasting system.
+
+A stronger validation exercise would add rolling-origin validation, alternative lag structures, logarithmic transformations and richer time-series specifications. Those extensions are outside the scope of this project but are the natural next tests before any operational use.
+
+### Conclusion
+
+The final regression is selected because it is accurate enough, transparent, economically coherent and easier to challenge. The model comparison does not show a clear enough benefit from more complex methods to replace it.
+</pre>
+</body>
+</html>
